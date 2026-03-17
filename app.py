@@ -88,7 +88,9 @@ st.markdown("""
 # Sidebar Inputs
 # -----------------------------
 st.sidebar.header("Planning Inputs")
-st.sidebar.caption("Adjust assumptions to estimate tax due today and compare long-term after-tax outcomes.")
+st.sidebar.caption(
+    "Adjust assumptions to estimate tax due today and compare projected net after-tax outcomes."
+)
 
 age = st.sidebar.number_input(
     "Current age",
@@ -105,7 +107,7 @@ filing_status = st.sidebar.selectbox(
 )
 
 current_taxable_income = st.sidebar.number_input(
-    "Current taxable income ($)",
+    "Current taxable income before conversion ($)",
     min_value=0.0,
     value=100000.0,
     step=1000.0,
@@ -137,7 +139,7 @@ state_tax_rate = st.sidebar.slider(
 )
 
 years_to_retirement = st.sidebar.number_input(
-    "Years until retirement",
+    "Planning horizon (years)",
     min_value=1,
     max_value=50,
     value=20,
@@ -175,11 +177,19 @@ federal_tax_due = conversion_amount * fed_rate
 state_tax_due = conversion_amount * state_rate
 total_tax_due = federal_tax_due + state_tax_due
 
+# Future values
 roth_future_value = future_value(conversion_amount, growth_rate, years_to_retirement)
 traditional_future_value_pre_tax = future_value(conversion_amount, growth_rate, years_to_retirement)
 traditional_future_value_after_tax = traditional_future_value_pre_tax * (1 - future_tax_rate)
 
-net_difference = roth_future_value - traditional_future_value_after_tax
+# New: recognize the opportunity cost of paying taxes today with outside cash
+tax_cost_future_value = future_value(total_tax_due, growth_rate, years_to_retirement)
+
+# Net future values
+roth_net_future_value = roth_future_value - tax_cost_future_value
+traditional_net_future_value = traditional_future_value_after_tax
+
+net_difference = roth_net_future_value - traditional_net_future_value
 tax_cost_as_pct_of_conversion = (total_tax_due / conversion_amount * 100) if conversion_amount > 0 else 0
 
 # -----------------------------
@@ -189,11 +199,13 @@ st.markdown("""
 <div class="hero-box">
     <div class="hero-title">Roth Conversion Impact Calculator</div>
     <p class="hero-subtitle">
-        Estimate the tax cost of a Roth conversion today and compare projected retirement outcomes
-        versus keeping assets in a Traditional account.
+        Estimate the immediate tax cost of a Roth conversion and compare projected net after-tax retirement outcomes
+        under a simplified planning scenario.
     </p>
 </div>
 """, unsafe_allow_html=True)
+
+st.caption("Internal demo • Version 2 MVP • Assumes conversion taxes are paid with outside cash")
 
 # -----------------------------
 # KPI Row
@@ -217,16 +229,16 @@ st.divider()
 left, right = st.columns([1.25, 1])
 
 with left:
-    st.markdown('<div class="section-title">Scenario Comparison</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Projected Outcome Comparison</div>', unsafe_allow_html=True)
 
     comparison_df = pd.DataFrame({
         "Scenario": [
-            "Convert to Roth Today",
+            "Convert to Roth Today (Net of Tax Cost Paid Today)",
             "Keep in Traditional (After Estimated Future Tax)"
         ],
         "Projected Value": [
-            roth_future_value,
-            traditional_future_value_after_tax
+            roth_net_future_value,
+            traditional_net_future_value
         ]
     })
 
@@ -239,22 +251,23 @@ with left:
         st.info("No conversion amount has been entered yet, so both scenarios are effectively neutral.")
     elif net_difference > 0:
         st.success(
-            f"Under these assumptions, converting today creates an estimated retirement-value advantage of "
-            f"{currency(net_difference)}."
+            f"After recognizing the opportunity cost of taxes paid today, converting now may improve projected "
+            f"net after-tax value by approximately {currency(net_difference)}."
         )
     elif net_difference < 0:
         st.warning(
-            f"Under these assumptions, keeping the money in Traditional may retain an estimated advantage of "
-            f"{currency(abs(net_difference))}."
+            f"After recognizing the opportunity cost of taxes paid today, keeping assets in Traditional may preserve "
+            f"an estimated advantage of {currency(abs(net_difference))}."
         )
     else:
-        st.info("Under these assumptions, both scenarios produce the same estimated result.")
+        st.info("After recognizing the cost of taxes paid today, both scenarios produce the same estimated result.")
 
     st.markdown(f"""
     <div class="mini-note">
         <strong>Quick interpretation:</strong><br>
-        You are modeling a current tax payment of <strong>{currency(total_tax_due)}</strong> in exchange for
-        potential future tax-free growth on <strong>{currency(conversion_amount)}</strong>.
+        This analysis assumes taxes of <strong>{currency(total_tax_due)}</strong> are paid today using outside cash.
+        The Roth scenario therefore reflects the future value of the converted amount net of the opportunity cost of
+        those tax dollars.
     </div>
     """, unsafe_allow_html=True)
 
@@ -264,11 +277,11 @@ with right:
     <div class="assumption-box">
         <p><strong>Age:</strong> {age}</p>
         <p><strong>Filing status:</strong> {filing_status}</p>
-        <p><strong>Current taxable income:</strong> {currency(current_taxable_income)}</p>
+        <p><strong>Current taxable income before conversion:</strong> {currency(current_taxable_income)}</p>
         <p><strong>Conversion amount:</strong> {currency(conversion_amount)}</p>
         <p><strong>Current federal marginal rate:</strong> {percent(current_federal_rate)}</p>
         <p><strong>State tax rate:</strong> {percent(state_tax_rate)}</p>
-        <p><strong>Years to retirement:</strong> {years_to_retirement}</p>
+        <p><strong>Planning horizon:</strong> {years_to_retirement} years</p>
         <p><strong>Annual growth rate:</strong> {percent(annual_growth_rate)}</p>
         <p style="margin-bottom:0;"><strong>Future effective tax rate on Traditional withdrawals:</strong> {percent(future_effective_tax_rate)}</p>
     </div>
@@ -297,11 +310,11 @@ with c1:
     st.plotly_chart(fig_tax, use_container_width=True)
 
 with c2:
-    st.markdown('<div class="section-title">Projected Retirement Value</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Projected Net Retirement Value</div>', unsafe_allow_html=True)
     fig_compare = go.Figure()
     fig_compare.add_bar(
-        x=["Roth Conversion", "Traditional After Tax"],
-        y=[roth_future_value, traditional_future_value_after_tax]
+        x=["Roth Net Future Value", "Traditional After Tax"],
+        y=[roth_net_future_value, traditional_net_future_value]
     )
     fig_compare.update_layout(
         xaxis_title="Scenario",
@@ -320,15 +333,18 @@ st.markdown('<div class="section-title">Growth Projection Over Time</div>', unsa
 
 years = list(range(years_to_retirement + 1))
 roth_series = [future_value(conversion_amount, growth_rate, y) for y in years]
+tax_cost_series = [future_value(total_tax_due, growth_rate, y) for y in years]
+roth_net_series = [r - t for r, t in zip(roth_series, tax_cost_series)]
+
 traditional_pre_tax_series = [future_value(conversion_amount, growth_rate, y) for y in years]
 traditional_after_tax_series = [v * (1 - future_tax_rate) for v in traditional_pre_tax_series]
 
 fig_growth = go.Figure()
 fig_growth.add_scatter(
     x=years,
-    y=roth_series,
+    y=roth_net_series,
     mode="lines",
-    name="Roth Conversion"
+    name="Roth Net of Tax Cost"
 )
 fig_growth.add_scatter(
     x=years,
@@ -347,11 +363,12 @@ st.plotly_chart(fig_growth, use_container_width=True)
 st.divider()
 
 # -----------------------------
-# Advisor Interpretation
+# Planning Summary
 # -----------------------------
-st.markdown('<div class="section-title">Advisor Interpretation</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Planning Summary</div>', unsafe_allow_html=True)
 
 i1, i2, i3 = st.columns(3)
+
 with i1:
     st.info(
         f"**Tax due today:** {currency(total_tax_due)}\n\n"
@@ -360,13 +377,13 @@ with i1:
 
 with i2:
     st.info(
-        f"**Projected Roth value:** {currency(roth_future_value)}\n\n"
-        f"This assumes the converted amount compounds tax-free for {years_to_retirement} years."
+        f"**Projected Roth net value:** {currency(roth_net_future_value)}\n\n"
+        f"This reflects tax-free growth on the converted amount after recognizing the opportunity cost of taxes paid today."
     )
 
 with i3:
     st.info(
-        f"**Traditional after-tax value:** {currency(traditional_future_value_after_tax)}\n\n"
+        f"**Traditional after-tax value:** {currency(traditional_net_future_value)}\n\n"
         f"This applies the assumed future withdrawal tax rate of {percent(future_effective_tax_rate)}."
     )
 
@@ -376,7 +393,8 @@ with i3:
 st.markdown("""
 <div class="disclaimer-box">
     <strong>Important disclaimer:</strong> This is a simplified educational estimate and not personalized tax,
-    legal, or investment advice. Actual outcomes may differ based on tax law, account type, other sources of income,
-    withdrawal timing, investment performance, Medicare considerations, and client-specific circumstances.
+    legal, or investment advice. This version assumes conversion taxes are paid with outside cash and compares
+    net projected outcomes under that assumption. Actual outcomes may differ based on tax law, account type,
+    other sources of income, withdrawal timing, investment performance, Medicare considerations, and client-specific circumstances.
 </div>
 """, unsafe_allow_html=True)
